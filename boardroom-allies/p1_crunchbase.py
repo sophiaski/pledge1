@@ -22,15 +22,18 @@ column_mapper = {'properties.organization_identifier.value':'company',
                  'identifier.image_id':'image_id',
                  'identifier.permalink':'permalink',
                  'identifier.entity_def_id':'entity_def_id'}
+
 order = ['Grant','Pre Seed Round','Seed Round','Series A','Series B','Series C',
          'Series D','Series E','Series F','Series G','Series H','Series I',
          'Series J','Series K','Secondary Market','Private Equity Round',
          'Debt Financing','Angel Round','Funding Round','Venture Round',
          'Corporate Round','Non Equity Assistance', 'Convertible Note', 'Post-IPO Equity','']
+
 order_abbrev = ['Grant','Pre Seed', 'Seed','A','B','C','D','E','F','G','H','I','J','K',
                 'Secondary','Private Eq', 'Debt', 'Angel Rnd', 'Funding Rnd',
                 'Venture Rnd', 'Corporate Rnd', 'Non Equity Assist', 'Convert Note',
                 'Post-IPO Equity','']
+
 abbrev_mapper = dict(zip(order,order_abbrev))
 order_mapper = {key:i for i,key in enumerate(order)}
 
@@ -252,60 +255,6 @@ def primary_info(person_id, field_ids=['primary_job_title','primary_organization
     except KeyError:
         org_uuid = 'NA'
     return {uuid:name}, {uuid:title}, {uuid:org}, {uuid:org_uuid}, {uuid:linkedin}
-
-def makequery_investors(uuid_lst, limit=1000):
-    '''
-    Create query for an investments search: Investors of input companies
-    * Organization includes list of organization uuid values
-
-    Parameters
-    ------------
-    uuid_lst : array_list
-        Input list.
-    limit : int, optional
-        "Limit" paramter. 1000, the default value, is the maximum number of results.
-
-    Return
-    ------------
-    query : dictionary
-        Query as json.
-    '''
-    if type(uuid_lst)!=list and type(uuid_lst)==str:
-        uuid_lst = [uuid_lst]
-    query = {'field_ids':['name','investor_identifier','organization_identifier','partner_identifiers'],
-             'limit':limit,
-             'query':[{'type':'predicate','field_id':'organization_identifier','operator_id':'includes','values':uuid_lst}]
-            }
-    return query
-
-def makequery_board_affiliations(uuid_lst, limit=1000):
-    '''
-    Create query for a jobs search: Board Affiliations
-    * Organization includes list of organization uuid values
-    * Excludes employee- and executive-level jobs
-
-    Parameters
-    ------------
-    uuid_lst : array_list
-        Input list.
-    limit : int, optional
-        "Limit" paramter. 1000, the default value, is the maximum number of results.
-
-    Return
-    ------------
-    query : dictionary
-        Query as json.
-    -
-    '''
-    if type(uuid_lst)!=list and type(uuid_lst)==str:
-        uuid_lst = [uuid_lst]
-    query = {'field_ids':['entity_def_id','identifier','job_type','name','organization_identifier',
-                          'person_identifier','short_description','is_current','title','uuid'],
-             'query':[{'type':'predicate','field_id':'organization_identifier','operator_id':'includes','values':uuid_lst},
-                      {'type':'predicate','field_id':'job_type','operator_id':'not_includes','values':['employee',
-                                                                                                       'executive']}],
-             'limit':limit}
-    return query
 
 def primary_info_of_people(person_uuids):
     # Start with empty dictionnaries

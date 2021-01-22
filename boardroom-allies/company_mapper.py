@@ -8,7 +8,7 @@ INPUT:
 OUTPUT FORMAT:
     Pandas DataFrame
 USAGE:
-    python company_mapper.py < 'companyA,companyB,...'
+    python -m company_mapper input.txt "True"|"False"
 
 Overview:
 
@@ -36,20 +36,26 @@ from pandas import json_normalize
 
 # P1s Crunchbase API user key
 from user_key import userkey
+
 # API POST methods
 from p1_crunchbase import url_count, url_extraction, go_past_1000
+
 # API GET methods
 from p1_crunchbase import autocompletes, primary_info, primary_info_of_people
-# Strings
+
+# String formatting functions
 from p1_crunchbase import create_board_strings, create_investor_strings
-# Column formatter
+
+# Column formatting dictionary
 from p1_crunchbase import column_mapper
-# Finance round formatters
+
+# Finance round formatting dictionaries
 from p1_crunchbase import order_mapper, abbrev_mapper
+
 # Query methods
 from p1_queries import makequery_investors, makequery_board_affiliations
 
-# Functions for this script
+# Helper functions just for this script
 def get_uuid(x):
     try:
         return x[0]['uuid']
@@ -70,14 +76,6 @@ def str_to_bool(s):
     else:
          raise ValueError # evil ValueError that doesn't tell you what the wrong value was
 
-
-    # this accepts the user's input
-    # and stores in inp
-    #input("Type anything")
-
-    # prints inp
-    #print(inp)
-
 def main():
     """main
     """
@@ -90,7 +88,6 @@ def main():
     else:
         print_outputs = str_to_bool(sys.argv[2])
         search_input = open("input.txt", "r").read().split('\n')
-        print(search_input)
 
     ################
     # SEARCH INPUT #
@@ -108,6 +105,8 @@ def main():
         uuid_found,value_found = autocompletes(item, 'organizations', limit=1, verbose=print_outputs)
         uuid.append(uuid_found)
         found_item.append(value_found)
+    
+    # Create dictionary that maps company names to their UUIDs (for adding to results)
     add_uuid_to_df = dict(zip(found_item,uuid))
 
     ######################
@@ -116,26 +115,27 @@ def main():
 
     # Reset global variable
     raw = pd.DataFrame()
+    
     # Make query of current/former board affiliations of companies
     query = makequery_board_affiliations(uuid)
+    
     # Run query w/ API call, which populates dataframe with query results
     comp_count = url_count(query, 'jobs')
     raw = go_past_1000(query, 'jobs', comp_count, raw)
 
-    # Filter down the query dataframe to usable fields
-    aff = raw[['properties.organization_identifier.value',  # Company name
-               'properties.person_identifier.uuid', # Person UUID
-               'properties.person_identifier.value',  # Person name
-               'properties.title',  # Job title of board affiliation
-               'properties.job_type',  # Crunchbase job_type
-               'properties.is_current'] # Boolean of whether job is current or not
-             ].sort_values(['properties.organization_identifier.value']).reset_index(drop=True) # Sory by company name
-    aff.rename(column_mapper, axis=1, inplace=True)
-
+    # Sort by company name
+    aff = raw.sort_values(['properties.organization_identifier.value']).reset_index(drop=True) 
+    
+    # Send through column_mapper
+    aff.rename(column_mapper, axis=1, inplace=True) 
+    
     # Get uuids of people
     board_uuids = list(set(aff['person_uuid'].to_list()))
-    # Pull unique list of company names from series
-    company_names = sorted(list(set(aff['company'].to_list())))
+    
+    # Pull unique list of company names from series as well as autocompletes function
+    company_names = aff['company'].to_list()
+    company_names = company_names + found_item
+    company_names = sorted(list(set(company_names)))
 
     # Display
     print('\n\nAFFILIATIONS')
@@ -149,16 +149,21 @@ def main():
     aff['primary_org'] = aff['person_uuid'].map(orgs)
     aff['person_linkedin'] = aff['person_uuid'].map(linkedin)
 
-    # Current board members
-    current_board_members = aff[((aff['is_current'])|(pd.isnull(aff['is_current'])))&(aff['job_type']=='board_member')].sort_values(['person'])
-    # Former board members
-    former_board_members = aff[(aff['is_current']==False)&(aff['job_type']=='board_member')].sort_values(['person'])
-    # Current board advisors/observers
-    current_board_other = aff[((aff['is_current'])|(pd.isnull(aff['is_current'])))& (aff['job_type']!='board_member')].sort_values(['person'])
-    # Former board advisors/observers
-    former_board_other = aff[(aff['is_current']==False)&(aff['job_type']!='board_member')].sort_values(['person'])
+    # 1) Current board members
+    current_board_members = aff[((aff['is_current']) | (pd.isnull(aff['is_current']))) 
+                                & (aff['job_type']=='board_member')].sort_values(['person'])
+    
+    # 2) Former board members
+    former_board_members = aff[(aff['is_current']==False) & (aff['job_type']=='board_member')].sort_values(['person'])
+    
+    # 3) Current board advisors/observers
+    current_board_other = aff[((aff['is_current']) | (pd.isnull(aff['is_current']))) &
+                              (aff['job_type']!='board_member')].sort_values(['person'])
+    
+    # 4) Former board advisors/observers
+    former_board_other = aff[(aff['is_current']==False) & (aff['job_type']!='board_member')].sort_values(['person'])
 
-    # To iterate through
+    # To iterate through later
     frames = [current_board_members, former_board_members, current_board_other, former_board_other]
 
     #############
@@ -176,12 +181,9 @@ def main():
     raw = go_past_1000(query, 'investments', comp_count, raw)
 
     # Create dataframe that contains the investor name, org name, and type of investment (for grouping)
-    investors = raw[['properties.investor_identifier.uuid',
-                     'properties.investor_identifier.value',
-                     'properties.identifier.value',
-                     'properties.organization_identifier.value',
-                     'properties.partner_identifiers']
-                   ].sort_values('properties.organization_identifier.value').reset_index(drop=True)
+    investors = raw.sort_values('properties.organization_identifier.value').reset_index(drop=True) # Sort by company name
+    
+    # Remove extra dashes in investor names
     investors['properties.investor_identifier.value'] = investors['properties.investor_identifier.value'].str.strip('-')
 
     # Extract financing type from title string
@@ -197,7 +199,8 @@ def main():
     investors.rename(column_mapper, axis=1, inplace=True)
 
     # Remove duplicates
-    investors = pd.DataFrame(investors.groupby(['investor_uuid','investor_name','company','type','partner_uuid','partner_name']).count().reset_index())
+    investors = pd.DataFrame(investors.groupby(['investor_uuid', 'investor_name', 'company', 'type', 
+                                                'partner_uuid', 'partner_name']).count().reset_index())
 
     print('INVESTMENTS')
     print('Number of companies: {}'.format(len(company_names)))
@@ -207,36 +210,47 @@ def main():
     ####################
     # CREATE DATAFRAME #
     ####################
-
+    
+    # Create dictionaries for board affiliations & add to mapper dictionary
     map_dict = create_board_strings(frames, company_names)
+    
+    # Create dictionaries for investor information
     investors_all, investors_w_info = create_investor_strings(investors)
+    
+    # Add to mapper dictionary
     map_dict.append(investors_all)
     map_dict.append(investors_w_info)
 
-    # Start mapping dataframe
+    # Create `mapping` dataframe
     aff_mapper = {}
     columns = ['Current Board Members','Former Board Members',
                'Current Board Advisors/Observers','Former Board Advisors/Observers',
                'Investors (All)','Investors (w/ Info)']
     for key in company_names:
-        aff_mapper[key] = [map_dict[0][key],map_dict[1][key],map_dict[2][key],map_dict[3][key],map_dict[4][key],map_dict[5][key]]
-    mapping = pd.DataFrame.from_dict(aff_mapper, orient='index', columns=columns).reset_index().rename({'index':'Company'},axis=1)
-    mapping['uuid'] = mapping['Company'].map(add_uuid_to_df)
-    mapping = mapping[['uuid','Company','Current Board Members','Former Board Members','Current Board Advisors/Observers',
-     'Former Board Advisors/Observers','Investors (All)','Investors (w/ Info)']]
+        aff_mapper[key] = [map_dict[0][key], map_dict[1][key], map_dict[2][key], 
+                           map_dict[3][key], map_dict[4][key], map_dict[5][key]]
+    mapping = pd.DataFrame.from_dict(aff_mapper, orient='index', 
+                                     columns=columns).reset_index().rename({'index':'Company'}, axis=1)
+    
+    # Add Company UUID created by autocompletes function
+    mapping['Company UUID'] = mapping['Company'].map(add_uuid_to_df)
+    
+    # Adjust columns
+    mapping = mapping[['Company', 'Current Board Members', 'Former Board Members', 'Current Board Advisors/Observers',
+                       'Former Board Advisors/Observers', 'Investors (All)', 'Investors (w/ Info)', 'Company UUID']]
 
     ##################
     # PRINT & OUTPUT #
     ##################
-
-    # Output
-    if mapping.shape[0]==1:
-        print('*'*50)
-        print('Results for {}'.format(value_found.upper()))
-        print('*'*50)
-        for idx,col in enumerate(mapping.columns):
-            print('{}:\n{}\n\n'.format(col.upper(), mapping.loc[0,col]))
-
+    
+    if print_outputs:
+        for index,row in mapping.iterrows():
+            print('*'*50)
+            print('Results for {}'.format(row['Company']))
+            print('*'*50)
+            for col in mapping.columns[1:]:
+                print('{}:\n{}\n\n'.format(col.upper(), row[col]))
+    print('\nRESULTS WRITTEN TO output.csv')
     mapping.to_csv('output.csv', index=False)
 
 if __name__ == "__main__":
